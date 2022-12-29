@@ -8,10 +8,11 @@ from scipy import stats
 from datetime import datetime
 import json
 import ast
+import os
 import subprocess
 
-from metrics import *
-from plot_utils import comparative_line_plot, line_plot
+from . metrics import *
+from . plot_utils import comparative_line_plot, line_plot
 
 import matplotlib.pyplot as plt
 
@@ -81,9 +82,22 @@ def get_algo_summary(experiment):
     a.index = pd.DatetimeIndex(a.index, dayfirst=True)
     return a
 
-def get_algo_summary_local(path):
-    with open(path, 'rb') as f:
-        a = pd.DataFrame(json.load(path))
+def get_algo_summary_local(name):
+    with open(os.path.join(name, 'algo_summary'), 'rb') as f:
+        a = pd.DataFrame(json.load(f))
+    a.set_index('date', inplace=True)
+    a.index = pd.DatetimeIndex(a.index, dayfirst=True)
+    symbols = [b[:b.index("_")] for b in list(a.columns)[1:]]
+    start_date = a.index[0].to_pydatetime()
+    end_date = a.index[-1].to_pydatetime()
+    return {
+        "symbols": symbols, # List of symbols traded by the experiments.
+        "start_date": start_date, # Start date of the backtest
+        "end_date": end_date, # End date of the backtest
+        "summary": {
+            name: a
+        }
+    }   
 
 # Gets the start and end dates for an experiment.
 def get_algo_dates(experiment: APIExperiment):
@@ -162,13 +176,23 @@ def create_tear_sheet(summary_dict):
             else:
                 all_summaries[stat_name].append(algo_stats[stat_name])
 
+    ##################
+    return all_summaries
+
+def create_tear_sheet_v2(summary):
+
+    algo_stats = map_funcs(TEAR_SHEET_FUNCS, (summary['our_log_ret'],))
+    alpha_beta = map_funcs(ALPHA_BETA_FUNCS, (summary['our_log_ret'], summary['BAC_log_ret']))
+    algo_stats = algo_stats | alpha_beta 
+    return algo_stats 
+
     # Now, make a LaTeX table of the stats.
-    a = make_latex_table(all_summaries, summary_dict['summary'].keys())
-    symbol_str = ', '.join(map(str, summary_dict['symbols'])) 
-    sd = summary_dict['start_date']
-    ed = summary_dict['end_date']
-    caption = f"\caption{{Backtest Statistics for trading {symbol_str} from {sd.month}-{sd.day}-{sd.year} to {ed.month}-{ed.day}-{ed.year}}}"
-    return a + caption
+    # a = make_latex_table(all_summaries, summary_dict['summary'].keys())
+    # symbol_str = ', '.join(map(str, summary_dict['symbols'])) 
+    # sd = summary_dict['start_date']
+    # ed = summary_dict['end_date']
+    # caption = f"\caption{{Backtest Statistics for trading {symbol_str} from {sd.month}-{sd.day}-{sd.year} to {ed.month}-{ed.day}-{ed.year}}}"
+    # return a + caption
 
 # Plotting the cumulative returns over the backtest
 def plot_cumulative_returns(summary_dict):
@@ -197,18 +221,20 @@ if __name__ == "__main__":
         "Algo 1": "a01f0695088b4c18982acf3fc76db50d"
     }
     # summary = get_algo_summary(api_exp)
-    summary = get_experiment_summaries(exp_ids)
+    # summary = get_experiment_summaries(exp_ids)
+    summary = get_algo_summary_local('example_path')
 
+    print(summary)
     # Generate cumulative returns plot
-    plot_cumulative_returns(summary)
-    # Generate underwater plot
-    plot_underwater(summary)
-    args = {
-        "tear_sheet": create_tear_sheet(summary)
-    }
-    # Write to a .tex file, filling in the tear sheet table! Cool stuff.
-    with open('metrics/reports/portfolio_analysis.tex','w') as f:
-        f.write(content%args)
+    # plot_cumulative_returns(summary)
+    # # Generate underwater plot
+    # plot_underwater(summary)
+    # args = {
+    #     "tear_sheet": create_tear_sheet(summary)
+    # }
+    # # Write to a .tex file, filling in the tear sheet table! Cool stuff.
+    # with open('metrics/reports/portfolio_analysis.tex','w') as f:
+    #     f.write(content%args)
 
-    proc = subprocess.Popen(['pdflatex', 'metrics/reports/portfolio_analysis.tex'])
-    proc.communicate()
+    # proc = subprocess.Popen(['pdflatex', 'metrics/reports/portfolio_analysis.tex'])
+    # proc.communicate()
